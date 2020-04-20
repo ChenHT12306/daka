@@ -28,6 +28,22 @@ class Menu extends Controller
                       "key":"NIGHT"
                     }
                     ]
+               },
+               {
+                   "name":"跳转H5",
+                   "sub_button":[
+                   {
+                       "type":"view",
+                       "name":"好友排名",
+                       "url":"http://wx2.cht666.cn/index/index/userLogin"
+                       
+                    },
+                    {
+                       "type":"view",
+                       "name":"二维码生成",
+                       "url":"http://wx2.cht666.cn/index/user/getBaseInfoPro"
+                       
+                    }]
                }]
          }';
 

@@ -2,7 +2,7 @@
 namespace app\index\controller;
 
 use think\Controller;
-
+use think\Db;
 class WxApi extends Controller
 {
     private $appid="wx0957d380884b4141";
@@ -105,12 +105,18 @@ class WxApi extends Controller
 //把XML类型转换成PHP可以用的对象类型
         $postObj = simplexml_load_string($postStr, 'SimpleXMLElement', LIBXML_NOCDATA);
 
+
+
+$this->log($postObj);
+
         $this->fromUsername = $postObj->FromUserName;  //用户
         $this->toUsername = $postObj->ToUserName;      //我们
         $this->msgtype = $postObj->MsgType;            //信息类型
         $this->content = $postObj->Content;            //用户的信息
         $this->time = time();                          // 时间戳
-        $this->log($this->msgtype);
+
+
+
         if($this->msgtype == 'text'){
 //            处理文本类型
             $this->receiveText();
@@ -183,18 +189,18 @@ class WxApi extends Controller
 
 
 
-    //客服消息
+    //客服消息----图片
     private function messageToUserName($media_id)//content 就是回复的消息，$fromUsername就是openid
     {
         //这里要获取token
         $ACC_TOKEN = $this->get_access_token();
-                $data = '{
-        "touser":"'.$this->fromUsername.'",
-        "msgtype":"image",
-        "image":
-        {
-        "media_id":"'.$media_id.'"
-        }
+        $data = '{
+            "touser":"'.$this->fromUsername.'",
+            "msgtype":"image",
+            "image":
+            {
+            "media_id":"'.$media_id.'"
+            }
         }';
 
         $url = "https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=".$ACC_TOKEN;
@@ -204,10 +210,41 @@ class WxApi extends Controller
         return $final;
     }
 
+
+    //客服消息----文字     提示8点    晚上9点
+    public function messageToUsers(){
+        //这里要获取token
+        $ACC_TOKEN = $this->get_access_token();
+
+        $users = DB::name('users')->select();
+        foreach($users as $v){
+            $data = '{
+            "touser":"'.$v['openId'].'",
+            "msgtype":"text",
+            "text":
+            {
+            "content":"这是群发消息：你的openid: '.$v['openId'].'"
+            }
+        }';
+
+            $url = "https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token=".$ACC_TOKEN;
+
+            $result = http_request($url,$data);
+            $final = json_decode($result);
+            $this->log($final);
+//            return $final;
+        }
+
+
+    }
+
     //上传临时素材---图片
-    public function uploadTmp(){
+    public function uploadTmp($filepath){
+        if(!$filepath){
+            echo '请选择上传文件';die;
+        }
             $type = "image";
-            $filepath = $_SERVER['DOCUMENT_ROOT']."/static/images/morning.jpg";
+//            $filepath = $_SERVER['DOCUMENT_ROOT']."/static/images/morning.jpg";
         if (class_exists('\CURLFile')) {
             $filedata = array('media' => new \CURLFile(realpath($filepath)));
         } else {
@@ -219,8 +256,8 @@ class WxApi extends Controller
             $result = http_request($url, $filedata);
 //            var_dump($result);die;
             $p = json_decode($result);
-        $this->log($p->media_id);
-        echo "media_id:".$p->media_id;
+//        $this->log($p->media_id);
+        return $p->media_id;
 
     }
 
@@ -241,6 +278,36 @@ class WxApi extends Controller
     public function receiveEvent($postObj){
 //            关注事件回复欢迎词123123123123
         if($postObj->Event=='subscribe'){
+            //获取用户openId
+            $openId = $postObj->FromUserName;
+
+            $user = Db::name('users')->where('openId',$openId)->find();
+
+            if(!$user){   // 不存在写入数据库
+                $users = new User();
+                $userInfo = $users->simpleGetUserInfo($openId);
+
+                $sex = $userInfo['sex'];
+                $nickname = $userInfo['nickname'];
+                $headimgurl = $userInfo['headimgurl'];
+
+                $img = http_getRequest($headimgurl);
+//                //获取图片的后最
+                $imageSrc = './static/usersImg/'.$openId.'.jpg';
+                $res =  file_put_contents($imageSrc,$img);
+                if($res){
+                    $arr = [
+                        'nickname' => $nickname,
+                        'head_img' => $imageSrc,
+                        'sex' => $sex,
+                        'created_at' => date('Y-m-d H:i:s',time()),
+                        'openId' => $openId
+                    ];
+                    $res = DB::name('users')->insert($arr);
+                }
+
+
+            }
             $txt="嗨，我是你的新朋友——小涛。\n\n";
             $txt.="过去3年里，有超过750W像你一样的小伙伴，每天和我一起“早晚安”打卡，让日子活出仪式感，用健康规律的作息，从容面对生活中的忙忙碌碌；我每天为你准备的独家打卡图，让你秀出与众不同的坚持与积极生活的态度；小确幸是我为你准备的隐藏技能包，希望能给你带来一些微小的快乐和幸福；偶尔你也可以和我说说生活中大事小事，我会一直陪在你身边的。\n\n";
             $txt.="现在打卡向好友问声晚安吧！\n\n";
@@ -263,28 +330,46 @@ class WxApi extends Controller
                 $Hour = date('H',$time);
                 $Minute = date('i',$time);
                 if($Hour>=4 && $Hour<=12){
+                    $Image = new Image();
+                    $fileURL = $Image->Image($postObj->FromUserName);
+                    $mediaId = $this->uploadTmp($fileURL);
                     $this->replayText("早晨打卡成功\n打卡时间为：".$Hour.':'.$Minute);
-                    $this->messageToUserName('wrfYVIKv0rlCdckEGkN9TV5fvQUf74-GdTB60MsvRMJnvKeG7WdEMjbfpAdPYSn8');
+                    $this->messageToUserName($mediaId);
                 }
                 //不在特定打卡时间
+                $Image = new Image();
+                $fileURL = $Image->Image($postObj->FromUserName);
+                $mediaId = $this->uploadTmp($fileURL);
+                unlink($fileURL);
                 $this->replayText("打卡可以帮你记录每天起床睡觉时间，养成良好习惯。\n\n早起打卡时间：4:00-12:00\n\n早睡打卡时间：20:00－4:00");
-                $this->messageToUserName('wrfYVIKv0rlCdckEGkN9TV5fvQUf74-GdTB60MsvRMJnvKeG7WdEMjbfpAdPYSn8');
+                $this->messageToUserName($mediaId);
+
             }else if($key=='NIGHT'){  //晚上打卡  20-4点
                 $time = time();
                 $Hour = date('H',$time);
                 $Minute = date('i',$time);
-                if($Hour>=20 && $Hour<=4){
-                    $this->replayText("晚上打卡成功\n打卡时间为：".$Hour.':'.$Minute);
-                    $this->messageToUserName('5Ri0DoE38jLoKeJdQmK4zIPYDSZTBuGaJrxxdKx0NZO2NPfv6mmL6JjBfbucLKL_');
-                }
-                $this->replayText("打卡可以帮你记录每天起床睡觉时间，养成良好习惯。\n\n早起打卡时间：4:00-12:00\n\n早睡打卡时间：20:00－4:00");
-                $this->messageToUserName('5Ri0DoE38jLoKeJdQmK4zIPYDSZTBuGaJrxxdKx0NZO2NPfv6mmL6JjBfbucLKL_');
 
-            }else if($key=='NEWS'){
-                $data=$this->mysql('wx_news');
-                $this->replayNews($data);
+                if(($Hour>=20 && $Hour<=24) || ($Hour>=0 && $Hour<=4)){
+                    $Image = new Image();
+                    $fileURL = $Image->Image($postObj->FromUserName);
+                    $mediaId = $this->uploadTmp($fileURL);
+                    $this->replayText("晚上打卡成功\n打卡时间为：".$Hour.':'.$Minute);
+                    $this->messageToUserName($mediaId);
+                }
+//                $Image = new Image();
+//                $fileURL = $Image->Image($postObj->FromUserName);
+//                $mediaId = $this->uploadTmp($fileURL);
+                $this->replayText("打卡可以帮你记录每天起床睡觉时间，养成良好习惯。\n\n早起打卡时间：4:00-12:00\n\n早睡打卡时间：20:00－4:00");
+//                $this->messageToUserName($mediaId);
+
 
             }
+
+        }else if($postObj->Event=='SCAN'){
+            $datas = $postObj->EventKey;
+//            $this->log($datas);
+            $this->replayText('传的openid:'.$datas."\n");
+
         }
     }
 
@@ -368,10 +453,5 @@ class WxApi extends Controller
         printf($xml, $this->fromUsername, $this->toUsername, $this->time,$media,$title,$description);
     }
 
-    public function mysql($table){
-        include('cms/include/mysql.class.php');
-        $mysql=new mysql('localhost','root','ChenHT12306','wx.cht666.cn','utf8');
-        $mysql->sql="SELECT * FROM $table";
-        return $mysql->getAll();
-    }
+
 }

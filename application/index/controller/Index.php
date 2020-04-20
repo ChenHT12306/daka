@@ -2,7 +2,7 @@
 namespace app\index\controller;
 
 use think\Controller;
-
+use think\Db;
 class Index extends Controller
 {
     public function index()
@@ -17,6 +17,30 @@ class Index extends Controller
 //        $WxApi->receiveImage($postObj);
 //        $WxApi->uploadTmp();
     }
+
+
+    //拉去用户信息登录
+    public function userLogin(){
+        //用户授权
+        $User = new User();
+        $User->getBaseInfo();
+    }
+
+    public function test(){
+        $Image = new Image();
+        $fileURL = $Image->Image('osuYV1uQNnerS9EJx6Pnpk9vIYAQ');
+
+        $WxApi = new WxApi();
+        $mediaId = $WxApi->uploadTmp($fileURL);
+        echo $mediaId;
+    }
+
+    //群发接口
+    public function sends(){
+        $WxApi = new WxApi();
+        $WxApi->messageToUsers();
+    }
+
 
 
 }
